@@ -1,18 +1,18 @@
-# :earth_americas: GDP dashboard template
+# 
 
-A simple Streamlit app showing the GDP of different countries in the world.
+Простейшее приложение на streamlit, который решает задачу классификации научных текстов>_<
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gdp-dashboard-template.streamlit.app/)
 
-### How to run it on your own machine
+### Как запустить
 
-1. Install the requirements
+1. Установить нужные зависимости
 
    ```
    $ pip install -r requirements.txt
    ```
 
-2. Run the app
+2. Запустить приложение
 
    ```
    $ streamlit run streamlit_app.py
