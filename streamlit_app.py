@@ -93,17 +93,17 @@ def predict(title: str, abstract: str | None) -> dict:
         "visible": visible_results
     }
 
-st.title("Классификация научных статей по жанрам из хранилища ArXiv")
+st.title("Классификация научных статей по тематикам из хранилища ArXiv")
 
 with st.container(border=True):
     st.subheader("О проекте")
     st.markdown(
         """
-        Это приложение определяет наиболее вероятный жанр научной статьи
+        Это приложение определяет наиболее вероятную тематику научной статьи
         по её **заголовку** и **abstract**.
-        Для обучения я использовал Bert-like модель.
+        Для обучения я дообучал Bert-like модель(а именно deberta-v3-base) .
 
-        **Как использовать:**
+        **Как использовать это приложение:**
         1. Введите заголовок статьи.
         2. Введите abstract статьи (необязательно).
         3. Нажмите **«Классифицировать»**.
@@ -134,18 +134,18 @@ abstract = st.text_area(
     height=150
 )
 
-classify_btn = st.button(
+button_classification = st.button(
     "Классифицировать",
     type="primary",
     use_container_width=True
 )
 
-if classify_btn:
+if button_classification:
     if not title.strip():
         st.warning("Заголовок обязателен (смотри пример)")
 
     else:
-        with st.spinner("Анализируем"):
+        with st.spinner("Анализируем.."):
             result = predict(title, abstract)
 
         st.divider()
@@ -155,7 +155,7 @@ if classify_btn:
         col1.metric("Жанр", result["label"])
         col2.metric("Уверенность", f"{result['score']:.1%}")
 
-        with st.expander("Наиболее вероятные жанры"):
-            st.caption("Показаны только классы, которые суммарно покрывают 95% вероятности.")
+        with st.expander("Наиболее вероятные тематики"):
+            st.caption("тематики, которые суммарно покрывают 95% вероятности.")
             for label, score in result["visible"]:
                 st.progress(score, text=f"{label}: {score:.1%}")
