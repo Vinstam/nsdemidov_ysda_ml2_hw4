@@ -1,151 +1,161 @@
 import streamlit as st
-import pandas as pd
-import math
-from pathlib import Path
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+
+MODEL_DIR = "nsdemidov/tuned-deberta-v3-base-for-arxiv-classification"
+MAX_LENGTH = 128
+DISPLAY_CUMSUM_THRESHOLD = 0.95 
+
+EXAMPLE_TITLE = "Attention Is All You Need"
+EXAMPLE_ABSTRACT = (
+    "The dominant sequence transduction models are based on complex recurrent or convolutional "
+    "neural networks that include an encoder and a decoder. We propose a new simple network "
+    "architecture, the Transformer, based solely on attention mechanisms, dispensing with "
+    "recurrence and convolutions entirely."
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+st.set_page_config(
+    page_title="Распознование статьи на Arxiv",
+    page_icon="📄",
+    layout="centered"
+)
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+@st.cache_resource(show_spinner="Загрузка модели...")
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
+    model.eval()
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    model.to(device)
+    return tokenizer, model, device
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+tokenizer, model, device = load_model()
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
+def keep_top_until_threshold(results, threshold=0.95):
+    filtered = []
+    cumulative = 0.0
+
+    for label, score in results:
+        filtered.append((label, score))
+        cumulative += score
+
+        if cumulative >= threshold:
+            break
+
+    return filtered
+
+def predict(title: str, abstract: str | None) -> dict:
+    title = title.strip()
+    abstract = (abstract or "").strip()
+
+    if abstract:
+        text = title + " [SEP] " + abstract
+    else:
+        text = title
+
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=MAX_LENGTH
     )
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    return gdp_df
+    with torch.no_grad():
+        outputs = model(**inputs)
+        logits = outputs.logits
+        probs = torch.softmax(logits, dim=-1)[0]
 
-gdp_df = get_gdp_data()
+    sorted_ids = torch.argsort(probs, descending=True).tolist()
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+    all_results = []
+    for idx in sorted_ids:
+        label = model.config.id2label.get(idx, str(idx))
+        score = probs[idx].item()
+        all_results.append((label, score))
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+    visible_results = keep_top_until_threshold(all_results, DISPLAY_CUMSUM_THRESHOLD)
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+    return {
+        "label": all_results[0][0],
+        "score": all_results[0][1],
+        "all": all_results,
+        "visible": visible_results
+    }
 
-# Add some spacing
-''
-''
+st.title("Классификация научных статей по жанрам из хранилища ArXiv")
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+with st.container(border=True):
+    st.subheader("О проекте")
+    st.markdown(
+        """
+        Это приложение определяет наиболее вероятный жанр научной статьи
+        по её **заголовку** и **abstract**.
+        Для обучения я использовал Bert-like модель.
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+        **Как использовать:**
+        1. Введите заголовок статьи.
+        2. Введите abstract статьи (необязательно).
+        3. Нажмите **«Классифицировать»**.
+        4. Приложение покажет наиболее вероятный жанр и распределение вероятностей.
 
-countries = gdp_df['Country Code'].unique()
+        **Важно:** если указать abstract, результат обычно получается точнее (так как изначально модель
+        изначально училась предсказывать жанр по заголовку и abstract).
+        """
+    )
 
-if not len(countries):
-    st.warning("Select at least one country")
+    with st.expander("Пример входных данных"):
+        st.markdown("**Заголовок:**")
+        st.code(EXAMPLE_TITLE, language=None)
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+        st.markdown("**Abstract:**")
+        st.code(EXAMPLE_ABSTRACT, language=None)
 
-''
-''
-''
+st.divider()
 
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+title = st.text_input(
+    "Заголовок статьи *",
+    placeholder="Attention Is All You Need"
 )
 
-''
-''
+abstract = st.text_area(
+    "Abstract",
+    placeholder="(необязательно)",
+    height=150
+)
 
+classify_btn = st.button(
+    "Классифицировать",
+    type="primary",
+    use_container_width=True
+)
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+if classify_btn:
+    if not title.strip():
+        st.warning("Заголовок обязателен (смотри пример)")
 
-st.header(f'GDP in {to_year}', divider='gray')
+    else:
+        with st.spinner("Анализируем"):
+            result = predict(title, abstract)
 
-''
+        st.divider()
+        st.subheader("Результат")
 
-cols = st.columns(4)
+        col1, col2 = st.columns(2)
+        col1.metric("Жанр", result["label"])
+        col2.metric("Уверенность", f"{result['score']:.1%}")
 
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+        with st.expander("Наиболее вероятные жанры"):
+            st.caption("Показаны только классы, которые суммарно покрывают 95% вероятности.")
+            for label, score in result["visible"]:
+                st.progress(score, text=f"{label}: {score:.1%}")
