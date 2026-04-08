@@ -154,8 +154,8 @@ if button_classification:
         st.subheader("Результат")
 
         col1, col2 = st.columns(2)
-        col1.metric("Жанр", result["label"])
-        col2.metric("Уверенность", f"{result['score']:.1%}")
+        col1.metric("Жанр", "Привет")
+        col2.metric("Уверенность", "Как дела?")
 
         with st.expander("Наиболее вероятные тематики"):
             st.caption("тематики, которые суммарно покрывают 95% вероятности.")
