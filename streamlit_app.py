@@ -55,8 +55,6 @@ def predict(title: str, abstract: str | None) -> dict:
         text = title + " [SEP] " + abstract
     else:
         text = title
-    
-    return text
 
     inputs = tokenizer(
         text,
@@ -65,8 +63,6 @@ def predict(title: str, abstract: str | None) -> dict:
         padding=True,
         max_length=MAX_LENGTH
     )
-
-    
 
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
@@ -151,10 +147,10 @@ if button_classification:
         st.subheader("Результат")
 
         col1, col2 = st.columns(2)
-        col1.metric("Жанр", result)
-        col2.metric("Уверенность", result)
+        col1.metric("Жанр", result["label"])
+        col2.metric("Уверенность", f"{result['score']:.1%}")
 
-        # with st.expander("Наиболее вероятные тематики"):
-        #     st.caption("тематики, которые суммарно покрывают 95% вероятности.")
-        #     for label, score in result["visible"]:
-        #         st.progress(score, text=f"{label}: {score:.1%}")
+        with st.expander("Наиболее вероятные тематики"):
+            st.caption("тематики, которые суммарно покрывают 95% вероятности.")
+            for label, score in result["visible"]:
+                st.progress(score, text=f"{label}: {score:.1%}")
