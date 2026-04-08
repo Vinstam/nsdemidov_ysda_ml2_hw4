@@ -24,19 +24,12 @@ st.set_page_config(
 @st.cache_resource(show_spinner="Загрузка модели...")
 def load_model():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_DIR,
-        torch_dtype=torch.float32
-    )
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
+    model.eval()
 
     device = torch.device("cpu")
 
     model.to(device)
-
-    if device.type == "cpu":
-        model = model.float()
-
-    model.eval()
     return tokenizer, model, device
 
 tokenizer, model, device = load_model()
@@ -62,6 +55,8 @@ def predict(title: str, abstract: str | None) -> dict:
         text = title + " [SEP] " + abstract
     else:
         text = title
+    
+    return text
 
     inputs = tokenizer(
         text,
@@ -70,6 +65,8 @@ def predict(title: str, abstract: str | None) -> dict:
         padding=True,
         max_length=MAX_LENGTH
     )
+
+    
 
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
@@ -154,10 +151,10 @@ if button_classification:
         st.subheader("Результат")
 
         col1, col2 = st.columns(2)
-        col1.metric("Жанр", "Привет")
-        col2.metric("Уверенность", "Как дела?")
+        col1.metric("Жанр", result)
+        col2.metric("Уверенность", result)
 
-        with st.expander("Наиболее вероятные тематики"):
-            st.caption("тематики, которые суммарно покрывают 95% вероятности.")
-            for label, score in result["visible"]:
-                st.progress(score, text=f"{label}: {score:.1%}")
+        # with st.expander("Наиболее вероятные тематики"):
+        #     st.caption("тематики, которые суммарно покрывают 95% вероятности.")
+        #     for label, score in result["visible"]:
+        #         st.progress(score, text=f"{label}: {score:.1%}")
