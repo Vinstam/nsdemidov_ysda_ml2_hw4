@@ -24,8 +24,10 @@ st.set_page_config(
 @st.cache_resource(show_spinner="Загрузка модели...")
 def load_model():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
-    model.eval()
+    model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_DIR,
+        torch_dtype=torch.float32
+    )
 
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -35,6 +37,11 @@ def load_model():
         device = torch.device("cpu")
 
     model.to(device)
+
+    if device.type == "cpu":
+        model = model.float()
+
+    model.eval()
     return tokenizer, model, device
 
 tokenizer, model, device = load_model()
